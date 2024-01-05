@@ -1,0 +1,459 @@
+---
+title: "Texas Real Estate"
+author: "Luca Bassem Abdul Hay"
+date: "2023-11-29"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{css, echo = FALSE}
+body {
+      
+      font-size: 2.0em;
+    }
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+## Real Estate market in Texas
+
+This is an exploratory analysis of the real estate market in Texas. The
+dataset contains real estate meausures for the main Texas cities from
+2010 to 2014. The variables contained in the dataset are the following:
+<br/> - city <br/> - year <br/> - month <br/> - sales, the total number
+of sales in that period <br/> - volume, total value of sales in M\$
+<br/> - median_price: the median selling price in \$ <br/> - listings:
+number of active listings <br/> - months_inventory: expected time in
+months to sell all the assets listed at the current selling pace <br/>
+
+Here is the dataset:
+
+```{r importing texas file, echo = FALSE}
+texas <- read.csv('realestate_texas.csv') %>% 
+  mutate(date = as.Date(paste0(year,"-", month, '-01'))) # I added the vbl date for ease of use
+
+summary(texas)
+```
+
+The variable types are the following:
+
+```{r vbl types, echo = FALSE}
+
+sapply(texas,class)
+```
+
+### Position indexes
+
+The distribution of frequency for relevant variables:
+
+```{r pos index, echo = FALSE}
+# there are 60 obs for each of the four cities in the dataset
+abs_freq_city <- table(texas$city) 
+rel_freq_city <- table(texas$city)/length(texas$city)
+distr_freq_city <- cbind(abs_freq_city, rel_freq_city = round(rel_freq_city, 2))
+
+# there are observations for 5 full years, 12months X 4cities = 48obs per year
+abs_freq_year <- table(texas$year) 
+rel_freq_year <- table(texas$year)/length(texas$year)
+distr_freq_year <- cbind("Year"=unique(texas$year),abs_freq_year, rel_freq_year = round(rel_freq_year, 2))
+
+# # for completeness, here is the distribution of frequency for the months
+# there are 20 obs for each month: 4cities X 5years = 20
+abs_freq_month <- table(texas$month) 
+rel_freq_month <- table(texas$month)/length(texas$month)
+distr_freq_month <- cbind("Month" = unique(texas$month),abs_freq_month, rel_freq_month = round(rel_freq_month, 2))
+
+knitr::kable(distr_freq_city, format = 'html', col.names = c("City", "Absolute Frequency", "Relative Frequency")) %>%  kableExtra::kable_styling(full_width = F,  position = "left") %>% kableExtra::column_spec(1,width_min = "1.8in")
+
+knitr::kable(distr_freq_year[,2:3], format = 'html', col.names = c("Year", "Absolute Frequency", "Relative Frequency")) %>%  kableExtra::kable_styling(full_width = F,  position = "left") %>% kableExtra::column_spec(1,width_min = "1.8in")
+
+knitr::kable(distr_freq_month, format = 'html', align = "lrr",col.names = c("Month", "Absolute Frequency", "Relative Frequency")) %>%  kableExtra::kable_styling(full_width = F,  position = "left") %>% kableExtra::column_spec(1,width_min = "1.8in")
+
+```
+
+### Position indexes & Variability indexes
+
+As per the main **position indexes** I used the function "sumtable" from *vtable* package for ease
+of use. In fact, this function is a very flexible tool that returns the summary indexes of my interest. I then
+compute the main variability indexes for each variable (range, IQR,
+variance, sd, CV) and the shape indexes (skewness, kurtosis) for the
+same variables.
+
+```{r posit indexes, echo = FALSE}
+library(moments) # loading moments for skewness and kurtosis
+# sapply(texas, summary)# main position indexes for the variables
+
+vtable::sumtable(texas[, -which(names(texas) %in% c('year','month',"city"))], title = "Position indexes for Texas dataset",
+                 summ = c('notNA(x)','mean(x)','sd(x)','min(x)','pctile(x)[25]',"pctile(x)[50]",'pctile(x)[75]','max(x)'),
+                 summ.names = c('N','Mean','Std. Dev.','Min','Q1',"Median",'Q3','Max'))
+
+```
+
+
+```{r vbl indexes, echo = F, results = 'asis'}
+
+relevant_variables <- colnames(texas)[4:8] # relevant variable for which I compute the vbl & shape indexes
+# I program the function to compute the coefficient of variation
+cv <- function(x) {
+  return(sd(x)/mean(x)*100)
+}
+
+# I initialize three dataframes to store the volatility indexes and to compare the CVs & skewness of the different variables
+vol_table <- data.frame(matrix(nrow = 0, ncol = 6))
+cv_rank <- data.frame(matrix(nrow = 0, ncol = 2))
+skew_rank <- data.frame(matrix(nrow = 0, ncol = 3))
+colnames(cv_rank) <- c('Variable','Coeff_Var')
+colnames(skew_rank) <- c('Variable','Skewness', 'Kurtosis')
+colnames(vol_table) <- c('Variable','Range','IQR', 'Variance','Std.Dev.','Coeff.Var.')
+# I program this for loop to get the info for each variable in one chunk of code
+for (i in seq_along(relevant_variables)) {
+  variable_range <- round(range(texas[, relevant_variables[i]])[2] - range(texas[, relevant_variables[i]])[1], 2)
+  # cat(paste0('The range of the variable: ', i, ' is ', variable_range, '\n'), fill = TRUE)
+  vol_table[i,1:2] = c(relevant_variables[i], variable_range)
+  
+  variable_iqr <- round(IQR(texas[, relevant_variables[[i]]]), 2)
+  # cat(paste0('The IQR of the variable: ', i, ' is ', variable_iqr, '\n'), fill = TRUE)
+  vol_table[i,3] = variable_iqr
+  
+  variable_var <- round(var(texas[, relevant_variables[[i]]]), 0)
+  # cat(paste0('The variance of the variable: ', i, ' is ', variable_var, '\n'), fill = TRUE)
+  vol_table[i,4] = variable_var
+  
+  variable_sd <- round(sd(texas[, relevant_variables[[i]]]), 2)
+  # cat(paste0('The standard deviation of the variable: ', i, ' is ', variable_sd, '\n'), fill = TRUE)
+  vol_table[i,5] = variable_sd
+  
+  variable_cv <- round(cv(texas[, relevant_variables[[i]]]), 2)
+  # cat(paste0('The Coefficient of Variation of the variable: ', i, ' is ', variable_cv, '\n'), fill = TRUE)
+  vol_table[i,6] = variable_cv
+  cv_rank[i,] = c(relevant_variables[[i]], variable_cv)
+  
+  variable_skew <- round(skewness(texas[, relevant_variables[[i]]]), 2)
+  # cat(paste0('The skewness of the distribution of the variable: ', i, ' is ', variable_skew, '\n'), fill = TRUE)
+  skew_rank[i, 1:2] = c(relevant_variables[[i]], abs(variable_skew))
+  
+  variable_kurt <- round(kurtosis(texas[, relevant_variables[[i]]]), 2)
+  skew_rank[i, 3] = variable_kurt
+  # cat(paste0('The kurtosis of the distribution of the variable: ', i, ' is ', variable_kurt, '\n'), fill = TRUE)
+}
+
+```
+
+The **variability indexes** for the relevant variables:
+```{r vol table, echo = FALSE}
+knitr::kable(vol_table %>% arrange(desc(Coeff.Var.)), format.args = list(big.mark = "," ,scientific = FALSE), 'simple', align = "lllcrr")
+```
+
+The **most volatile** variable (aka the one with the highest Coefficient of Variation, which as we know is a measure of volatility that makes the variability among different variables comparable) and the **most asymmetric** one are the following:
+
+``` {r cv & skewness, echo = FALSE}
+
+skew_rank <- skew_rank %>% arrange(desc(Skewness))
+colnames(skew_rank)[2] = 'Skewness(in Abs)'
+knitr::kable(cv_rank %>% arrange(desc(Coeff_Var)), format = 'html', col.names = c('Variable', 'Coefficient of Variation'), align = "ll") %>%  kableExtra::kable_styling(full_width = F,  position = "left") %>% kableExtra::column_spec(1,width_min = "3in") %>% kableExtra::row_spec(1, bold = T) 
+
+knitr::kable(skew_rank[,1:2], format = "html", align = "lll") %>% kableExtra::kable_styling(full_width = F,  position = "left") %>% kableExtra::column_spec(1,width_min = "3in") %>% kableExtra::row_spec(1, bold = TRUE) %>% 
+ kableExtra::column_spec(2,width_min = "1.8in")
+
+```
+The **Kurtosis index** for the different quantitative variables is the following:
+
+```{r kurtosis, echo=FALSE}
+
+
+knitr::kable(skew_rank[,c(1,3)], format = "html", align = "lll") %>% kableExtra::kable_styling(full_width = F,  position = "left") %>% kableExtra::column_spec(1,width_min = "3in") %>% 
+ kableExtra::column_spec(2,width_min = "1.8in")
+```
+
+### Class distribution 
+
+I decide to divide the variable *listings* in classes. I opted for this variable because it is the second most volatile variable but only the third most skewed:
+
+```{r class distribution, echo = F }
+attach(texas)
+
+listings_cl <- cut(listings, breaks = c(0, 1000,2000, 3000, max(listings)), dig.lab = 7)
+n = length(texas$listings)
+
+
+ni = table(listings_cl)
+fi = round(table(listings_cl)/n, 2)
+Ni = cumsum(ni)
+Fi = round(cumsum(fi), 2)
+
+distr_freq_list <- cbind(ni, fi, Ni, Fi)
+
+knitr::kable(distr_freq_list, format = "html", align = "llrr") %>% kableExtra::kable_styling(full_width = F,  position = "left") %>% kableExtra::column_spec(1,width_min = "1in") 
+
+```
+
+Here is the **barplot** of the different classes:
+
+``` {r barplot, echo = F}
+library(ggplot2)
+
+ggplot(data = texas) +
+  geom_bar(aes(x = listings_cl),
+           stat = "count",
+           col = "black",
+           fill = "darkred") +
+  labs(title = "Distribution of classes of the number of monthly listings",
+       x = "R.E. Listings in classes, count",
+       y = "Absolute Frequences") +
+  scale_y_continuous(breaks = seq(0,150,25)) +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+```
+<br> Let's now compute the Gini index of these classes: <br>
+```{r gini, echo=FALSE, results = 'asis'}
+
+gini_index <- function(x) {
+  ni = table(x)
+  fi = table(x)/length(x)
+  fi2 = fi^2
+  J = length(table(x))
+  
+  gini = 1 - sum(fi2)
+  gini_norm = gini / ((J-1)/J)
+  return(gini_norm)
+}
+
+
+cat("**Gini index** of the listings divided in classes: ",round(gini_index(listings_cl), 2))
+```
+
+The Gini index for the variable *city* will be 1 as all the four cities are equally represented in the dataset: <br>
+```{r gini city, echo=F, results = 'asis'}
+cat("**Gini index** of the variable city: ", gini_index(city))
+```
+
+
+### Probability
+
+***What is the probability of picking the city "Beaumont" if we randomly pick one row of the dataset?***<br>
+There are 60 observations that report "Beaumont" as a city over a total number of observation of 240. This means that the probability of extracting a row for which the variable *city* is "Beaument" is $\frac{60}{240} = 0.25$ <br>
+In this example, I sampled the city 1000 times and here is the result: 
+
+```{r prob, echo=F, warning=FALSE}
+draw_city <- sample(texas$city, 1000, replace = T) 
+ggplot()+
+  geom_histogram(aes(x=draw_city,
+                     y = after_stat(count/sum(count))),
+                 stat = 'count',
+                 col = 'black',
+                 fill = c('darkred','lightblue', 'lightblue','lightblue')) +
+  ylab('Prob') +
+  xlab('City') +
+  scale_y_continuous(breaks = seq(0.05, 0.5, 0.05))
+
+```
+<br>***What is the probability of picking the month "July" if we randomly pick one row of the dataset?***<br>
+There are 5 complete years (so 5 times "July" as a month) in the dataset for all of the 4 cities in the dataset. This means that the probability of extracting a row for which the variable *city* is "Beaument" is $\frac{5*4}{240} = \frac{20}{240} = 0.08$ <br>
+In this example, I sampled the month 1000 times and here is the result: 
+```{r prob month, echo=F, warning=FALSE}
+draw_month <- sample(texas$month, 1000, replace = T) 
+ggplot()+
+  geom_histogram(aes(x=draw_month,
+                     y = after_stat(count/sum(count))),
+                 stat = 'count',
+                 col = 'black',
+                 fill = c("lightblue","lightblue","lightblue","lightblue","lightblue","lightblue",'darkred','lightblue', 'lightblue','lightblue',"lightblue","lightblue")) +
+  ylab('Prob') +
+  xlab('Month') +
+  scale_y_continuous(breaks = seq(0.02, 0.3, 0.02)) +
+  scale_x_continuous(breaks = seq(1, 12, 1))
+
+```
+<br>***What is the probability of picking the month of December of the year 2012 if we randomly pick one row of the dataset?***<br>
+There are 4 observation in the dataset whose month-year key is December 2012 (one for each city).
+Thus $\frac{4}{240} = 0.01\overline{6}$. <br> 
+I firstly create a key month-year and then I sample the data as before. For ease of readiness, I will not show the histogram but I will rather show the computation:
+```{r prob month specific, warning=FALSE, results='asis'}
+texas$month_year <- paste0(month,"-",year)
+draw_month_year <- sample(texas$month_year, 100000, replace = T) 
+prob_dec_2012 <- sum(ifelse(draw_month_year == "12-2012", 1, 0))/100000
+cat("<br> The probability of drawing a row from December 2012 is " , round(prob_dec_2012, 2))
+```
+
+### Mean price
+
+We have the information for the number of sales in each month (the variable *sales*) and the total value generated by those sales (the variable *volume*). The average price will thus be:
+
+$Average Price = \frac{Volume}{Sales}$ <br>
+Also, a way to measure the *efficacy* of the listings would be to divide the number of sales in each row (identified by the key city-month-year) by the number of listings in that specific row. Like this: 
+
+$Listing Efficacy = \frac{Sales}{Listings}$ <br> This new variable would measure the rate of efficacy of the listings in each month-year in each city (i.e. out of *xxx* listings how many properties were effectively sold?) 
+
+``` {r mean price, echo = F}
+texas <- texas %>% mutate(mean_price = round(volume*(10^6)/sales, 2),
+                          list_efficacy = round(sales/listings, 2)) 
+head(texas[, c("mean_price", "list_efficacy")], 5)
+```
+
+### Conditional mean and Std Dev
+
+Here I create new tables that show the mean of some variables by city, month and year:
+
+``` {r cond mean, echo = F}
+
+city_summ <- texas %>% group_by(city) %>%  summarise(cond_mean_list = round(mean(listings), 2),
+                                                     cond_mean_vol = round(mean(volume), 2),
+                                                     cond_mean_sales = round(mean(sales), 0),
+                                                     sd_list = round(sd(listings), 2),
+                                                     sd_vol = round(sd(volume), 2),
+                                                     sd_sales = round(sd(sales), 2))
+year_summ <- texas %>% group_by(year) %>%  summarise(cond_mean_list = round(mean(listings), 2),
+                                                     cond_mean_vol = round(mean(volume), 2),
+                                                     cond_mean_sales = round(mean(sales), 0),
+                                                     sd_list = round(sd(listings), 2),
+                                                     sd_vol = round(sd(volume), 2),
+                                                     sd_sales = round(sd(sales), 2))
+month_summ <- texas %>% group_by(month) %>%  summarise(cond_mean_list = round(mean(listings), 2),
+                                                     cond_mean_vol = round(mean(volume), 2),
+                                                     cond_mean_sales = round(mean(sales), 0),
+                                                     sd_list = round(sd(listings), 2),
+                                                     sd_vol = round(sd(volume), 2),
+                                                     sd_sales = round(sd(sales), 2))
+
+knitr::kable(city_summ, format.args = list(big.mark = "," ,scientific = FALSE), 'simple', align = "lrrrrrr", col.names = c("City", "Average # of monthly listings", "Average tot value of sales","Average # of monthly sales","Std.Dev. Listings","Std.Dev. Value", "Std.Dev. Sales"))
+
+knitr::kable(year_summ, format.args = list(big.mark = "" ,scientific = FALSE), 'simple', align = "lrrrrrr", col.names = c("Year", "Average # of listings", "Average tot value of sales","Average # of sales","Std.Dev. Listings","Std.Dev. Value", "Std.Dev. Sales"))
+
+knitr::kable(month_summ, format.args = list(big.mark = "," ,scientific = FALSE), 'simple', align = "lrrrrrr", col.names = c("City", "Average # of listings", "Average tot value of sales","Average # of sales","Std.Dev. Listings","Std.Dev. Value", "Std.Dev. Sales"))
+```
+
+### Some interesting plots
+
+I will analyse the distribution of the median price across cities using a boxplot:
+
+``` {r boxplot, echo = F, warning = F, message = F}
+attach(texas)
+ggplot() +
+  geom_boxplot(aes(x = city,
+               y = median_price), color = 'darkred',
+               fill = 'lightblue') +
+  ylab("Median Price") +
+  xlab("City") +
+  theme_classic()
+```
+
+<br> The main insights we can extract from this plot is that the city with the highest median prices is Bryan-College Station while the city that showed the lowest median prices is Wichita Falls. The IQR range among the different cities is similar, only Wichita Falls seems to show a slightly higher inter-quartile range. Let's see the same plot for the total monthly value of sales by city and year:
+
+``` {r boxplot2, echo = F, warning = F, message = F}
+attach(texas)
+ggplot() +
+  geom_boxplot(aes(x = city,
+               y = volume), color = 'darkred',
+               fill = 'lightblue') +
+  ylab("Total Value of Sales") +
+  xlab("City") +
+  scale_y_continuous(labels = c("0", "20M","40M","60M", "80M")) +
+  theme_classic()
+detach(texas)
+```
+<br> As we can see the total value of monthly sales shows more variability for *Bryan-College Station* and *Tyler* while *Whichita Falls* shows very little volatility for this variable. Now, an interesting one, let's look at the boxplots by year:
+
+``` {r boxplot3, echo = F, warning = F, message = F}
+attach(texas)
+ggplot() +
+  geom_boxplot(aes(x = factor(year),
+               y = volume), color = 'darkred',
+               fill = 'lightblue') +
+  ylab("Total Value of Sales") +
+  scale_y_continuous(labels = c("0", "20M","40M","60M", "80M")) +
+  xlab("Year") +
+  theme_classic()
+detach(texas)
+```
+<br> As I imagined this plot shows how the total value of sales in M$ increased with time. This is a characteristic of time series, that are time-dependent. It also shows that the variability increased over time (the IQR range is much higher in 2014 compared to 2010 or 2011). 
+
+Let's now try to find a way to analyze the sales across different months of the same year, by city:
+
+
+
+``` {r stacked plot, echo = F}
+library(ggplot2)
+library(ggiraph)
+my_plots <- list()
+for(year_ in unique(texas$year)){
+  
+  texas_y <- dplyr::filter(texas, year == year_)
+  
+  
+
+  a <- ggplot(data = texas_y) +
+  geom_bar_interactive(aes(x = month,
+               y = volume,
+               fill = city,
+               tooltip = volume,
+               data_id = volume),
+           position = "stack",
+           stat = "identity",
+           col = "black") +
+  labs(title = paste0("Total value of RE sales in Texas in ", year_, " by month, by city"),
+       x = "Month",
+       y = "Total Value of Sales") +
+  scale_y_continuous(breaks = seq(0, 200, 50), labels = c("0","50M","100M","150M","200M")) +
+  scale_x_continuous(breaks = seq(1, 12, 1)) +
+  theme_classic()
+  x <- girafe(ggobj = a)
+  my_plots[[length(my_plots)+1]] <- x
+}
+
+htmltools::tagList(my_plots)
+```
+
+```{r normalized stack, echo=FALSE}
+library(ggplot2)
+library(ggiraph)
+my_plots_norm <- list()
+for(year_ in unique(texas$year)){
+  
+  texas_y <- dplyr::filter(texas, year == year_)
+  
+  
+
+  a <- ggplot(data = texas_y) +
+  geom_bar_interactive(aes(x = month,
+               y = volume,
+               fill = city),
+           position = "fill",
+           stat = "identity",
+           col = "black") +
+  labs(title = paste0("Real Estate sales in Texas in ", year_, " by month, by city in % of the total"),
+       x = "Month",
+       y = "% Value of Sales") +
+  scale_y_continuous(breaks = seq(0, 1, 0.20), labels = c("0","20%","40%","60%","80%", "100%")) +
+  scale_x_continuous(breaks = seq(1, 12, 1)) +
+  theme_classic()
+  x <- girafe(ggobj = a)
+  my_plots_norm[[length(my_plots_norm)+1]] <- x
+}
+
+htmltools::tagList(my_plots_norm)
+```
+Finally here is a line chart to compare sales between cities and years:
+
+```{r line chart, echo=FALSE}
+
+ggplot(data = texas) +
+  # geom_col(aes(x= date, y = volume)) +
+  geom_line(aes(x= date, y = volume, color = city), lwd = 1) + 
+  scale_y_continuous(breaks = seq(0, 100, 20), labels = c("0","20M","40M","60M","80M", "100M")) +
+  scale_x_continuous(breaks = seq.Date(min(date), max(date), by= "year" ), labels = c("2010-Q1","2011-Q1", "2012-Q1", "2013-Q1", "2014-Q1")) +
+  theme_classic()+ 
+  ylab("Total Value of Sales") + 
+  xlab("Date")
+```
+
+The main insights of this last plot are the following: <br>
+- Tyler & Bryan-College Station show high seasonality in their real estate market (i.e. higher volume in summer lower volume in winter) <br>
+- Tyler & Bryan-College Station also show an increasing trend over time, while Beaumont and especially Wichita Falls seem to follow a flat trend. <br> 
